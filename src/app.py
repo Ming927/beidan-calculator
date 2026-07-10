@@ -10,7 +10,10 @@ from src.models import (
 from src.calculator import calculate, RETURN_RATE, MAX_PRIZE, TAX_THRESHOLD, TAX_RATE, BASE_AMOUNT
 from src.parlay import M_N_PRESETS, validate_parlay
 from src.storage import BetStorage
-from src.odds_fetcher import get_default_fetcher, format_matches_for_api
+from src.odds_fetcher import (
+    get_default_fetcher, format_matches_for_api,
+    ApiFetcher, DemoFetcher,
+)
 
 app = Flask(__name__)
 storage = BetStorage("data/bets.json")
@@ -28,31 +31,12 @@ def index():
 
 @app.route("/api/calculate", methods=["POST"])
 def api_calculate():
-    """奖金计算接口。
-
-    请求格式:
-    {
-        "bets": [{"match_id": "M001", "play_type": "让球胜平负", "selected_option": "3"}, ...],
-        "parlay": {"mode": "m_n", "m": 3, "n": 1},
-        "multiplier": 1,
-        "matches": {
-            "M001": {
-                "home_team": "曼联", "away_team": "利物浦",
-                "handicap": -1, "play_type": "让球胜平负",
-                "status": "completed",
-                "result": {"home_score": 2, "away_score": 0, "half_home_score": 1, "half_away_score": 0,
-                           "second_half_home_score": 1, "second_half_away_score": 0},
-                "sp_values": {"3": 2.5, "1": 3.2, "0": 2.8}
-            }
-        }
-    }
-    """
+    """奖金计算接口。"""
     try:
         data = request.get_json()
         if not data:
             return jsonify({"success": False, "error": "请求体不能为空"}), 400
 
-        # 解析投注
         bets = []
         for b in data.get("bets", []):
             bets.append(BetSelection(
@@ -64,7 +48,6 @@ def api_calculate():
         if not bets:
             return jsonify({"success": False, "error": "至少需要1个投注选项"}), 400
 
-        # 解析串关配置
         p = data.get("parlay", {})
         mode_str = p.get("mode", "single")
         if mode_str == "single":
@@ -75,14 +58,13 @@ def api_calculate():
                 m=p.get("m", len(bets)),
                 selected_levels=p.get("selected_levels", []),
             )
-        else:  # m_n
+        else:
             parlay_config = ParlayConfig(
                 mode=ParlayMode.M_N,
                 m=p.get("m", len(bets)),
                 n=p.get("n", 1),
             )
 
-        # 解析比赛数据
         match_map = {}
         for mid, md in data.get("matches", {}).items():
             result = None
@@ -107,7 +89,6 @@ def api_calculate():
                 sp_values=md.get("sp_values", {}),
             )
 
-        # 创建 ticket 并计算
         ticket = Ticket(
             ticket_id=str(uuid.uuid4())[:8],
             bets=bets,
@@ -117,7 +98,6 @@ def api_calculate():
 
         result = calculate(ticket, match_map)
 
-        # 保存到存储（失败不影响计算）
         try:
             storage.save_ticket(ticket)
             for m in match_map.values():
@@ -167,16 +147,18 @@ def api_config():
             count = comb(m_val, k)
             breakdown_parts.append(f"{count}个{k}串1")
         presets_formatted[key] = {
-            "m": m_val,
-            "n": n_val,
-            "levels": levels,
+            "m": m_val, "n": n_val, "levels": levels,
             "breakdown": breakdown_parts,
         }
+
+    fetcher = get_default_fetcher()
+    odds_mode = "api" if isinstance(fetcher.inner, ApiFetcher) else "demo"
 
     return jsonify({
         "play_types": {pt.value: PLAY_TYPE_OPTIONS[pt] for pt in PlayType},
         "max_parlay": {pt.value: v for pt, v in PLAY_TYPE_MAX_PARLAY.items()},
         "m_n_presets": presets_formatted,
+        "odds_mode": odds_mode,
         "rules": {
             "return_rate": RETURN_RATE,
             "max_prize": MAX_PRIZE,
@@ -200,11 +182,8 @@ def api_history():
             {
                 "ticket_id": t.ticket_id,
                 "bets": [
-                    {
-                        "match_id": b.match_id,
-                        "play_type": b.play_type.value,
-                        "selected_option": b.selected_option,
-                    }
+                    {"match_id": b.match_id, "play_type": b.play_type.value,
+                     "selected_option": b.selected_option}
                     for b in t.bets
                 ],
                 "parlay": {
@@ -225,37 +204,51 @@ def api_history():
 
 @app.route("/api/fetch-odds", methods=["POST"])
 def api_fetch_odds():
-    """从互联网抓取最新的北单赔率数据。
+    """获取最新的北单赔率数据。
 
     请求: POST /api/fetch-odds
-    可选参数 JSON: {"url": "自定义数据源URL", "force": true}
+    可选参数 JSON: {"url": "API地址", "api_key": "API密钥", "force": true}
 
-    返回: {"success": true, "matches": {...}, "count": N}
+    返回: {"success": true, "mode": "demo"|"api", "matches": {...}, "count": N}
     """
     try:
-        data = request.get_json(silent=True) or {}
-        custom_url = data.get("url")
-        force_refresh = data.get("force", False)
+        req_data = request.get_json(silent=True) or {}
+        force_refresh = req_data.get("force", False)
+        api_url = req_data.get("url", "")
+        api_key = req_data.get("api_key", "")
 
         fetcher = get_default_fetcher()
-        if force_refresh:
+        inner = fetcher.inner
+
+        # 动态切换模式
+        if api_url and api_key:
+            new_inner = ApiFetcher(base_url=api_url, api_key=api_key)
+            fetcher._inner = new_inner
             fetcher.invalidate()
-        if custom_url and hasattr(fetcher, '_inner'):
-            fetcher._inner.base_url = custom_url
+            mode = "api"
+        elif isinstance(inner, ApiFetcher):
+            mode = "api"
+        else:
+            mode = "demo"
+
+        if force_refresh:
             fetcher.invalidate()
 
         matches = fetcher.fetch_matches()
 
         if not matches:
-            return jsonify({
-                "success": False,
-                "error": "未能获取到赔率数据。请检查网络连接或目标网站是否可访问。"
-            }), 502
+            if mode == "demo":
+                msg = "演示模式未返回数据，请重试。"
+            else:
+                msg = ("API 未返回数据。请检查 API 地址和密钥是否正确。"
+                       "可设置环境变量 BEIDAN_API_URL 和 BEIDAN_API_KEY 持久化配置。")
+            return jsonify({"success": False, "mode": mode, "error": msg}), 502
 
         formatted = format_matches_for_api(matches)
 
         return jsonify({
             "success": True,
+            "mode": mode,
             "count": len(matches),
             "matches": formatted,
         })

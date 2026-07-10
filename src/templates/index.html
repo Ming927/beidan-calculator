@@ -88,8 +88,17 @@ h1{text-align:center;color:#1a1a2e;margin-bottom:8px;font-size:24px}
 <div class="card">
 <h2>比赛数据</h2>
 <div style="margin-bottom:12px">
-<button class="btn btn-primary" onclick="fetchLiveOdds()" id="btn-fetch-odds">🔄 获取实时赔率</button>
+<button class="btn btn-primary" onclick="fetchLiveOdds()" id="btn-fetch-odds">🔄 获取赔率数据</button>
+<button class="btn btn-default" onclick="toggleApiSettings()" style="font-size:11px">⚙️ 数据源设置</button>
 <span id="fetch-status" style="font-size:12px;color:#999;margin-left:8px"></span>
+<div id="api-settings" style="display:none;margin-top:8px;padding:8px;background:#fafafa;border-radius:4px;font-size:12px">
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <label>API地址: <input id="api-url" placeholder="https://api.example.com/sport/api/v1/lot/bd/odds" style="width:350px;padding:4px;font-size:12px"></label>
+        <label>密钥: <input id="api-key" type="password" placeholder="API Key / Token" style="width:150px;padding:4px;font-size:12px"></label>
+        <button class="btn btn-primary" onclick="fetchLiveOdds()" style="font-size:11px;padding:4px 10px">连接并获取</button>
+    </div>
+    <div style="margin-top:4px;color:#999">当前模式: <strong id="odds-mode-label">演示模式</strong> — 设置 BEIDAN_API_URL 和 BEIDAN_API_KEY 环境变量可持久化配置。</div>
+</div>
 </div>
 <div class="grid" id="matches-container"></div>
 <div class="btn-group">
@@ -454,20 +463,38 @@ async function loadHistory() {
 }
 
 // ── 赔率获取 ──
+function toggleApiSettings() {
+    const div = document.getElementById('api-settings');
+    div.style.display = div.style.display === 'none' ? 'block' : 'none';
+}
+
 async function fetchLiveOdds() {
     const btn = document.getElementById('btn-fetch-odds');
     const status = document.getElementById('fetch-status');
+    const modeLabel = document.getElementById('odds-mode-label');
     btn.disabled = true;
     btn.textContent = '⏳ 获取中...';
     status.textContent = '';
 
+    const apiUrl = document.getElementById('api-url').value.trim();
+    const apiKey = document.getElementById('api-key').value.trim();
+
     try {
+        const payload = {force: true};
+        if (apiUrl && apiKey) { payload.url = apiUrl; payload.api_key = apiKey; }
+
         const resp = await fetch('/api/fetch-odds', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({force: true})
+            body: JSON.stringify(payload)
         });
         const data = await resp.json();
+
+        // 更新模式显示
+        if (data.mode) {
+            modeLabel.textContent = data.mode === 'api' ? 'API实时模式' : '演示模式';
+        }
+
         if (!data.success) {
             status.textContent = '❌ ' + (data.error || '获取失败');
             status.style.color = '#ff4d4f';
@@ -494,14 +521,17 @@ async function fetchLiveOdds() {
         renderMatches();
         updateParlayUI();
         updatePreview();
-        status.textContent = `✅ 成功获取 ${data.count} 场比赛`;
+        const modeStr = data.mode === 'api' ? '实时API' : '演示';
+        status.textContent = `✅ [${modeStr}] 成功获取 ${data.count} 场比赛`;
         status.style.color = '#52c41a';
+        // 隐藏设置面板
+        document.getElementById('api-settings').style.display = 'none';
     } catch(e) {
         status.textContent = '❌ 网络错误: ' + e.message;
         status.style.color = '#ff4d4f';
     } finally {
         btn.disabled = false;
-        btn.textContent = '🔄 获取实时赔率';
+        btn.textContent = '🔄 获取赔率数据';
     }
 }
 

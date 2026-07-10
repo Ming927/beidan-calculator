@@ -1,34 +1,35 @@
-"""赔率获取模块 - 从互联网实时抓取北单比赛 SP 值。
+"""赔率获取模块 - 从互联网实时获取北单比赛 SP 值。
 
 架构:
     OddsFetcher (抽象基类)
-    ├── WebScraperFetcher — 网页爬取（基于 requests + BeautifulSoup）
-    └── CachedOddsFetcher — 缓存装饰器（默认 5 分钟 TTL）
+    ├── ApiFetcher — 商业API客户端 (NamiData/AntScore格式)
+    ├── DemoFetcher — 演示模式，生成逼真样本数据（默认）
+    └── CachedOddsFetcher — 缓存包装器 (默认 5 分钟 TTL)
+
+配置 (环境变量):
+    BEIDAN_API_URL  — 商业API地址 (如 https://api.example.com/sport/api/v1/lot/bd/odds)
+    BEIDAN_API_KEY  — API密钥
+    BEIDAN_API_USER — API用户名 (部分服务需要)
+    设置后自动切换为 API 模式，否则使用演示模式。
 
 使用:
     from src.odds_fetcher import get_default_fetcher, format_matches_for_api
-
     fetcher = get_default_fetcher()
     matches = fetcher.fetch_matches()  # → list[Match]
-    api_data = format_matches_for_api(matches)  # → 前端可直接用的 dict
-
-扩展新数据源:
-    class MyFetcher(OddsFetcher):
-        def fetch_matches(self) -> list[Match]:
-            ...
 """
 
+import os
 import time
 import re
 import json
+import random
 import logging
 from abc import ABC, abstractmethod
 from typing import Optional
 
 import requests
-from bs4 import BeautifulSoup
 
-from src.models import PlayType, MatchStatus, Match, MatchResult
+from src.models import PlayType, MatchStatus, Match
 
 logger = logging.getLogger(__name__)
 
@@ -75,7 +76,7 @@ def format_matches_for_api(matches: list[Match]) -> dict:
 # ═══════════════════════════════════════════
 
 class OddsFetcher(ABC):
-    """赔率获取器抽象基类。所有数据源必须实现此接口。"""
+    """赔率获取器抽象基类。"""
 
     @abstractmethod
     def fetch_matches(self) -> list[Match]:
@@ -84,22 +85,21 @@ class OddsFetcher(ABC):
 
 
 # ═══════════════════════════════════════════
-# 缓存装饰器
+# 缓存包装器
 # ═══════════════════════════════════════════
 
 class CachedOddsFetcher(OddsFetcher):
-    """带 TTL 缓存的赔率获取器包装。
-
-    参数:
-        inner: 被包装的 OddsFetcher 实例
-        ttl_seconds: 缓存有效期（秒），默认 300（5分钟）
-    """
+    """带 TTL 缓存的赔率获取器包装。"""
 
     def __init__(self, inner: OddsFetcher, ttl_seconds: int = 300):
         self._inner = inner
         self._ttl = ttl_seconds
         self._cache: Optional[list[Match]] = None
         self._last_fetch: float = 0.0
+
+    @property
+    def inner(self) -> OddsFetcher:
+        return self._inner
 
     def fetch_matches(self) -> list[Match]:
         now = time.time()
@@ -116,253 +116,102 @@ class CachedOddsFetcher(OddsFetcher):
 
 
 # ═══════════════════════════════════════════
-# 网页爬取实现
+# 商业 API 客户端
 # ═══════════════════════════════════════════
 
-class WebScraperFetcher(OddsFetcher):
-    """从公开彩票数据网站爬取北单赔率。
+class ApiFetcher(OddsFetcher):
+    """商业体育数据 API 客户端。
 
-    支持:
-        - HTML table 解析（自动尝试多种 CSS 选择器）
-        - 内嵌 JSON 数据提取（作为回退方案）
-        - GBK/UTF-8 编码自动检测
-        - 可自定义目标 URL
+    支持 NamiData / AntScore 等主流数据服务商的北单接口格式。
+    通过环境变量配置:
+        BEIDAN_API_URL  — API端点
+        BEIDAN_API_KEY  — API密钥 (token参数)
+        BEIDAN_API_USER — 用户名 (部分服务需要)
 
-    参数:
-        base_url: 目标网站 URL
-        timeout: HTTP 请求超时（秒）
+    兼容的API返回格式:
+        {"code": 0, "data": {"list": [{
+            "id": 43, "comp": "联赛", "home": "主队", "away": "客队",
+            "issue": "45", "issue_num": "45",
+            "odds": {
+                "spf": {"goal": "0", "sf3": "1.85", "sf1": "3.20", "sf0": "3.80"},
+                "jq": {...}, "bqc": {...}, "sxp": {...}, "bf": {...}
+            }
+        }]}}
     """
 
-    DEFAULT_URL = "https://odds.500.com/index_bd.shtml"
-
-    def __init__(self, base_url: str = "", timeout: int = 10):
-        self.base_url = base_url or self.DEFAULT_URL
+    def __init__(self, base_url: str = "", api_key: str = "", api_user: str = "",
+                 timeout: int = 10):
+        self.base_url = base_url or os.environ.get("BEIDAN_API_URL", "")
+        self.api_key = api_key or os.environ.get("BEIDAN_API_KEY", "")
+        self.api_user = api_user or os.environ.get("BEIDAN_API_USER", "")
         self.timeout = timeout
-        self.session = requests.Session()
-        self.session.headers.update({
-            "User-Agent": (
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) "
-                "Chrome/125.0.0.0 Safari/537.36"
-            ),
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-            "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
-        })
+
+    @property
+    def is_configured(self) -> bool:
+        return bool(self.base_url)
 
     def fetch_matches(self) -> list[Match]:
-        """获取比赛列表。网络错误时返回空列表。"""
+        if not self.base_url:
+            logger.warning("API未配置，请设置 BEIDAN_API_URL 环境变量")
+            return []
+
+        params = {"token": self.api_key}
+        if self.api_user:
+            params["user"] = self.api_user
+
         try:
-            resp = self.session.get(self.base_url, timeout=self.timeout)
+            resp = requests.get(
+                self.base_url,
+                params=params,
+                timeout=self.timeout,
+                headers={"User-Agent": "BeidanCalculator/1.0"},
+            )
             resp.raise_for_status()
-            resp.encoding = self._detect_encoding(resp)
-            return self._parse_html(resp.text)
+            data = resp.json()
+
+            if data.get("code") != 0:
+                logger.warning("API返回错误: %s", data.get("msg", "未知错误"))
+                return []
+
+            items = data.get("data", {}).get("list", [])
+            return self._parse_response(items)
+
         except requests.RequestException:
-            logger.warning("获取赔率失败：网络请求异常", exc_info=True)
+            logger.warning("API请求失败", exc_info=True)
             return []
         except Exception:
-            logger.error("解析赔率异常", exc_info=True)
+            logger.error("API数据解析异常", exc_info=True)
             return []
 
-    def _detect_encoding(self, resp: requests.Response) -> str:
-        """检测网页编码（优先响应头 → meta 标签 → 默认 GBK）。"""
-        if resp.encoding and resp.encoding.lower() not in ('iso-8859-1', 'latin-1'):
-            return resp.encoding
-        match = re.search(rb'charset=["\']?([\w-]+)', resp.content[:2048])
-        if match:
-            return match.group(1).decode('ascii')
-        return 'gbk'
-
-    def _parse_html(self, html: str) -> list[Match]:
-        """解析 HTML，提取所有比赛行。"""
-        soup = BeautifulSoup(html, 'lxml')
+    def _parse_response(self, items: list[dict]) -> list[Match]:
+        """解析 NamiData/AntScore 格式的 API 响应。"""
         matches = []
-
-        # 尝试多种常见的表格选择器
-        row_selectors = [
-            'table[class*="bet"] tr',
-            'table[class*="odds"] tr',
-            'table[class*="match"] tr',
-            '.match-list tr',
-            '.odds-list tr',
-            'table tr[class*="match"]',
-            'tr[class*="odds"]',
-        ]
-        rows = []
-        for sel in row_selectors:
-            rows = soup.select(sel)
-            if rows:
-                break
-
-        # 如果选择器没匹配到，尝试找所有 table 中的 tr
-        if not rows:
-            for table in soup.find_all('table'):
-                rows = table.find_all('tr')
-                if len(rows) >= 3:  # 至少表头+2行数据
-                    break
-
-        for i, row in enumerate(rows):
+        for item in items:
             try:
-                m = self._parse_row(row, i)
-                if m:
-                    matches.append(m)
-            except Exception:
-                continue
-
-        # 回退：尝试从内嵌 JSON 提取
-        if not matches:
-            matches = self._try_extract_json(soup)
-
-        return matches
-
-    def _parse_row(self, row, index: int) -> Optional[Match]:
-        """解析单行比赛数据。提取主队、客队、让球、SP值。
-
-        支持的常见列结构：
-          [联赛, 主队, 客队, 让球, SP胜, SP平, SP负, ...]  (500.com format)
-          [编号, 主队, 客队, 让球, SP胜, SP平, SP负, ...]
-          [主队, 客队, 让球, SP胜, SP平, SP负, ...]
-        """
-        cells = row.find_all(['td', 'th'])
-        if not cells:
-            return None
-
-        # 跳过表头行
-        if row.find('th'):
-            return None
-
-        texts = [c.get_text(strip=True) for c in cells]
-
-        # 过滤空行和标题行
-        if len(texts) < 4:
-            return None
-        if any(kw in ''.join(texts[:3]) for kw in ['比赛', '赛事', '主队', '日期', '编号']):
-            return None
-
-        # 将文本分类：队名 vs 数字
-        names = []
-        numbers = []
-        for t in texts:
-            stripped = t.strip()
-            # 数字类: 纯数字、带符号整数、浮点数
-            is_num = bool(re.match(r'^-?\d+(\.\d+)?$', stripped))
-            if is_num:
-                numbers.append(stripped)
-            elif stripped and not stripped.startswith('SP'):
-                names.append(stripped)
-
-        home, away, handicap, sp_values = "", "", 0, {}
-
-        # 根据 names 长度判断格式
-        if len(names) >= 3:
-            # [联赛, 主队, 客队, ...] 格式 — 跳过联赛名
-            home, away = names[1], names[2]
-        elif len(names) == 2:
-            home, away = names[0], names[1]
-        else:
-            return None
-
-        # 从数字中提取 SP 值
-        sp_candidates = [parse_sp_value(t) for t in numbers if parse_sp_value(t) > 0]
-        if len(sp_candidates) >= 3:
-            sp_values["3"] = sp_candidates[0]
-            sp_values["1"] = sp_candidates[1]
-            sp_values["0"] = sp_candidates[2]
-
-        # 让球数：在数字中找带符号的整数
-        for t in numbers:
-            if t.startswith('-') or t.startswith('+'):
-                try:
-                    handicap = int(t)
-                    break
-                except ValueError:
-                    pass
-
-        if not home or not away or not sp_values:
-            return None
-
-        return Match(
-            match_id=f"BD{index+1:03d}",
-            home_team=home,
-            away_team=away,
-            handicap=handicap,
-            play_type=PlayType.HANDICAP_WDL,
-            status=MatchStatus.PENDING,
-            sp_values=sp_values,
-        )
-
-    def _try_extract_json(self, soup: BeautifulSoup) -> list[Match]:
-        """从页面内嵌的 JS 变量中提取 JSON 比赛数据。"""
-        matches = []
-        for script in soup.find_all('script'):
-            if not script.string:
-                continue
-            # 匹配常见模式: var xxx = [{...}];
-            m = re.search(r'(?:var|let|const|window\.)\s*\w+\s*=\s*(\[[\s\S]*?\])\s*;', script.string)
-            if not m:
-                continue
-            try:
-                data = json.loads(m.group(1))
-                if isinstance(data, list) and len(data) > 0 and isinstance(data[0], dict):
-                    matches = self._parse_json_data(data)
-                    if matches:
-                        break
-            except (json.JSONDecodeError, KeyError, TypeError):
-                continue
-        return matches
-
-    def _parse_json_data(self, data: list[dict]) -> list[Match]:
-        """解析 JSON 格式的比赛数据（兼容 NamiData/AntScore 等商业 API 格式）。"""
-        matches = []
-        for i, item in enumerate(data):
-            try:
-                home = item.get('home', item.get('home_team', item.get('h', '')))
-                away = item.get('away', item.get('away_team', item.get('a', '')))
+                mid = str(item.get("id", item.get("match_id", "")))
+                home = item.get("home", item.get("home_team", ""))
+                away = item.get("away", item.get("away_team", ""))
                 if not home or not away:
                     continue
 
-                handicap = 0
+                odds = item.get("odds", item.get("sp", {}))
+                spf = odds.get("spf", odds.get("had", {}))
+
+                handicap = int(spf.get("goal", spf.get("handicap", 0)))
                 sp_values = {}
-
-                # 尝试标准格式: item.odds.spf
-                odds = item.get('odds', item.get('sp', {}))
-                if isinstance(odds, dict):
-                    spf = odds.get('spf', odds.get('had', {}))
-                    if isinstance(spf, dict):
-                        handicap = int(spf.get('goal', spf.get('handicap', 0)))
-                        sp_values = {}
-                        for k, v in spf.items():
-                            if k in ('goal', 'handicap', 'id'):
-                                continue
-                            option_key = k.replace('sf', '').replace('h', '').replace('a', '')
-                            val = parse_sp_value(str(v))
-                            if val > 0:
-                                sp_values[option_key] = val
-
-                # 回退：直接字段
-                if not sp_values:
-                    for key in ('sf3', 'h3', '3'):
-                        v = item.get(key, item.get('sp_win', ''))
-                        if v:
-                            sp_values['3'] = parse_sp_value(str(v))
-                            break
-                    for key in ('sf1', 'h1', '1'):
-                        v = item.get(key, item.get('sp_draw', ''))
-                        if v:
-                            sp_values['1'] = parse_sp_value(str(v))
-                            break
-                    for key in ('sf0', 'h0', '0'):
-                        v = item.get(key, item.get('sp_lose', ''))
-                        if v:
-                            sp_values['0'] = parse_sp_value(str(v))
-                            break
+                for k in ("sf3", "sf1", "sf0"):
+                    option = k.replace("sf", "")
+                    val = parse_sp_value(str(spf.get(k, "")))
+                    if val > 0:
+                        sp_values[option] = val
 
                 if not sp_values:
                     continue
 
                 matches.append(Match(
-                    match_id=str(item.get('id', item.get('match_id', f'BD{i+1:03d}'))),
-                    home_team=str(home),
-                    away_team=str(away),
+                    match_id=mid,
+                    home_team=home,
+                    away_team=away,
                     handicap=handicap,
                     play_type=PlayType.HANDICAP_WDL,
                     status=MatchStatus.PENDING,
@@ -374,15 +223,94 @@ class WebScraperFetcher(OddsFetcher):
 
 
 # ═══════════════════════════════════════════
-# 模块级默认实例
+# 演示模式 (Demo Mode)
+# ═══════════════════════════════════════════
+
+# 演示数据：逼真的球队名和 SP 值范围
+_DEMO_TEAMS = [
+    ("曼联", "利物浦"), ("曼城", "阿森纳"), ("切尔西", "热刺"),
+    ("皇马", "巴萨"), ("马竞", "塞维利亚"), ("拜仁", "多特蒙德"),
+    ("巴黎", "马赛"), ("尤文", "国际米兰"), ("AC米兰", "罗马"),
+    ("阿贾克斯", "埃因霍温"), ("波尔图", "本菲卡"), ("凯尔特人", "流浪者"),
+    ("上海海港", "山东泰山"), ("北京国安", "广州队"), ("武汉三镇", "浙江队"),
+]
+
+_DEMO_LEAGUES = ["英超", "西甲", "德甲", "法甲", "意甲", "中超", "欧冠"]
+
+
+class DemoFetcher(OddsFetcher):
+    """演示模式赔率获取器。
+
+    生成逼真的样本比赛数据用于测试和演示。
+    每次调用返回 8-12 场随机生成的比赛，含合理的 SP 值。
+    """
+
+    def __init__(self, match_count: int = 0, seed: int = 0):
+        self._rng = random.Random(seed) if seed else random.Random()
+        self._match_count = match_count or self._rng.randint(8, 12)
+
+    def fetch_matches(self) -> list[Match]:
+        rng = self._rng
+        count = self._match_count
+        teams = rng.sample(_DEMO_TEAMS, min(count, len(_DEMO_TEAMS)))
+        if len(teams) < count:
+            while len(teams) < count:
+                teams.append(rng.choice(_DEMO_TEAMS))
+
+        matches = []
+        for i, (home, away) in enumerate(teams):
+            handicap = rng.choices([0, -1, 1, -2, 2], weights=[3, 3, 3, 1, 1])[0]
+
+            base_sp3 = round(rng.uniform(1.5, 4.0), 2)
+            base_sp1 = round(rng.uniform(2.5, 5.0), 2)
+            base_sp0 = round(rng.uniform(2.0, 6.0), 2)
+
+            if handicap < 0:
+                base_sp3 = round(max(1.2, base_sp3 - 0.3 * abs(handicap)), 2)
+            elif handicap > 0:
+                base_sp0 = round(max(1.2, base_sp0 - 0.3 * abs(handicap)), 2)
+
+            sp_values = {"3": base_sp3, "1": base_sp1, "0": base_sp0}
+            league = rng.choice(_DEMO_LEAGUES)
+
+            matches.append(Match(
+                match_id=f"demo_{i+1:03d}",
+                home_team=f"[{league}] {home}",
+                away_team=away,
+                handicap=handicap,
+                play_type=PlayType.HANDICAP_WDL,
+                status=MatchStatus.PENDING,
+                sp_values=sp_values,
+            ))
+
+        return matches
+
+
+# ═══════════════════════════════════════════
+# 默认实例工厂
 # ═══════════════════════════════════════════
 
 _default_fetcher: Optional[CachedOddsFetcher] = None
 
 
 def get_default_fetcher() -> CachedOddsFetcher:
-    """获取默认的赔率获取器实例（单例，带 5 分钟缓存）。"""
+    """获取默认的赔率获取器实例（单例，带缓存）。
+
+    自动检测配置:
+    - 若设置了 BEIDAN_API_URL，使用 ApiFetcher (商业API模式)
+    - 否则使用 DemoFetcher (演示模式，生成样本数据)
+    """
     global _default_fetcher
-    if _default_fetcher is None:
-        _default_fetcher = CachedOddsFetcher(WebScraperFetcher(), ttl_seconds=300)
+    if _default_fetcher is not None:
+        return _default_fetcher
+
+    api_url = os.environ.get("BEIDAN_API_URL", "")
+    if api_url:
+        logger.info("使用商业API模式: %s", api_url)
+        inner = ApiFetcher(base_url=api_url)
+    else:
+        logger.info("使用演示模式（设置 BEIDAN_API_URL 可切换为实时API）")
+        inner = DemoFetcher()
+
+    _default_fetcher = CachedOddsFetcher(inner, ttl_seconds=300)
     return _default_fetcher

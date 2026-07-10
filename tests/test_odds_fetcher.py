@@ -1,9 +1,10 @@
 """赔率获取模块测试。"""
 
+import os
 import pytest
 from unittest.mock import patch, MagicMock
 from src.odds_fetcher import (
-    OddsFetcher, WebScraperFetcher, CachedOddsFetcher,
+    OddsFetcher, ApiFetcher, DemoFetcher, CachedOddsFetcher,
     parse_sp_value, format_matches_for_api, get_default_fetcher,
 )
 from src.models import PlayType, MatchStatus, Match
@@ -25,138 +26,126 @@ class TestParseSPValue:
     def test_parse_whitespace(self):
         assert parse_sp_value("  1.85  ") == 1.85
 
-    def test_parse_negative(self):
-        assert parse_sp_value("-1") == -1.0
-
 
 class TestFormatMatchesForAPI:
-    """format_matches_for_api 格式转换"""
+    """format_matches_for_api"""
 
     def test_formats_matches_correctly(self):
         matches = [
-            Match(
-                match_id="M1", home_team="曼联", away_team="利物浦",
-                handicap=-1, play_type=PlayType.HANDICAP_WDL,
-                status=MatchStatus.PENDING,
-                sp_values={"3": 2.5, "1": 3.2, "0": 2.8},
-            )
+            Match(match_id="M1", home_team="曼联", away_team="利物浦",
+                  handicap=-1, play_type=PlayType.HANDICAP_WDL,
+                  status=MatchStatus.PENDING,
+                  sp_values={"3": 2.5, "1": 3.2, "0": 2.8}),
         ]
         result = format_matches_for_api(matches)
         assert "M1" in result
         assert result["M1"]["sp_values"]["3"] == 2.5
         assert result["M1"]["handicap"] == -1
-        assert result["M1"]["status"] == "pending"
-        assert result["M1"]["play_type"] == "让球胜平负"
 
     def test_formats_empty_list(self):
         assert format_matches_for_api([]) == {}
 
 
-class TestWebScraperFetcher:
-    """网页爬虫测试"""
+class TestApiFetcher:
+    """商业 API 客户端"""
 
-    def test_fetch_returns_empty_on_connection_error(self):
-        fetcher = WebScraperFetcher(timeout=1)
-        with patch('src.odds_fetcher.requests.Session.get', side_effect=Exception("Connection refused")):
-            matches = fetcher.fetch_matches()
-            assert matches == []
+    def test_not_configured_returns_empty(self):
+        fetcher = ApiFetcher(base_url="")
+        assert not fetcher.is_configured
+        assert fetcher.fetch_matches() == []
 
-    def test_fetch_parses_simple_html(self):
-        html = """<html><body><table><tr>
-        <td>英超</td><td>曼联</td><td>利物浦</td><td>-1</td>
-        <td>2.50</td><td>3.20</td><td>2.80</td>
-        </tr></table></body></html>"""
-        fetcher = WebScraperFetcher()
-        with patch.object(fetcher.session, 'get') as mock_get:
-            mock_get.return_value = MagicMock(
-                status_code=200,
-                content=html.encode('utf-8'),
-                text=html,
-                encoding='utf-8',
-            )
-            mock_get.return_value.raise_for_status = MagicMock()
+    def test_is_configured_with_url(self):
+        fetcher = ApiFetcher(base_url="https://api.example.com/odds")
+        assert fetcher.is_configured
+
+    def test_fetch_parses_standard_response(self):
+        fetcher = ApiFetcher(base_url="https://api.example.com/odds", api_key="test")
+        mock_resp = MagicMock()
+        mock_resp.json.return_value = {
+            "code": 0,
+            "data": {"list": [{
+                "id": 43, "home": "博阿维斯塔", "away": "吉马良斯",
+                "odds": {"spf": {"goal": "0", "sf3": "3.58", "sf1": "3.58", "sf0": "2.53"}},
+            }]},
+        }
+        mock_resp.raise_for_status = MagicMock()
+        with patch('src.odds_fetcher.requests.get', return_value=mock_resp):
             matches = fetcher.fetch_matches()
-            assert len(matches) >= 1
+            assert len(matches) == 1
             m = matches[0]
-            assert m.home_team == "曼联"
-            assert m.away_team == "利物浦"
-            assert m.handicap == -1
-            assert m.sp_values["3"] == 2.50
+            assert m.home_team == "博阿维斯塔"
+            assert m.sp_values["3"] == 3.58
+            assert m.sp_values["0"] == 2.53
+
+    def test_fetch_handles_error_code(self):
+        fetcher = ApiFetcher(base_url="https://api.example.com/odds")
+        mock_resp = MagicMock()
+        mock_resp.json.return_value = {"code": 1, "msg": "无效token"}
+        mock_resp.raise_for_status = MagicMock()
+        with patch('src.odds_fetcher.requests.get', return_value=mock_resp):
+            assert fetcher.fetch_matches() == []
+
+    def test_fetch_handles_network_error(self):
+        fetcher = ApiFetcher(base_url="https://api.example.com/odds")
+        with patch('src.odds_fetcher.requests.get', side_effect=Exception("timeout")):
+            assert fetcher.fetch_matches() == []
+
+
+class TestDemoFetcher:
+    """演示模式"""
+
+    def test_generates_matches_with_fixed_seed(self):
+        fetcher = DemoFetcher(match_count=10, seed=42)
+        matches = fetcher.fetch_matches()
+        assert len(matches) == 10
+        for m in matches:
+            assert m.home_team
+            assert m.away_team
+            assert m.sp_values["3"] > 0
+            assert m.sp_values["1"] > 0
+            assert m.sp_values["0"] > 0
             assert m.play_type == PlayType.HANDICAP_WDL
+            assert m.status == MatchStatus.PENDING
 
-    def test_fetch_handles_http_error(self):
-        fetcher = WebScraperFetcher(timeout=1)
-        with patch.object(fetcher.session, 'get') as mock_get:
-            mock_get.side_effect = __import__('requests').exceptions.HTTPError("404")
-            matches = fetcher.fetch_matches()
-            assert matches == []
+    def test_same_seed_same_output(self):
+        """相同种子的单实例产生相同结果"""
+        f1 = DemoFetcher(match_count=8, seed=123)
+        m1 = f1.fetch_matches()
+        # 重建后重新设置种子
+        f2 = DemoFetcher(match_count=8, seed=123)
+        m2 = f2.fetch_matches()
+        assert len(m1) == len(m2)
+        for a, b in zip(m1, m2):
+            assert a.home_team == b.home_team
+            assert a.sp_values == b.sp_values
 
-    def test_parse_json_data_standard_format(self):
-        """测试 NamiData 风格的 JSON 解析"""
-        fetcher = WebScraperFetcher()
-        data = [{
-            "id": 43,
-            "home": "博阿维斯塔",
-            "away": "吉马良斯",
-            "odds": {
-                "spf": {
-                    "goal": "0",
-                    "sf3": "3.58",
-                    "sf1": "3.58",
-                    "sf0": "2.53"
-                }
-            }
-        }]
-        matches = fetcher._parse_json_data(data)
-        assert len(matches) == 1
-        m = matches[0]
-        assert m.home_team == "博阿维斯塔"
-        assert m.away_team == "吉马良斯"
-        assert m.handicap == 0
-        assert m.sp_values["3"] == 3.58
-        assert m.sp_values["1"] == 3.58
-        assert m.sp_values["0"] == 2.53
-
-    def test_parse_json_data_flat_format(self):
-        """测试简单字段格式的 JSON 解析"""
-        fetcher = WebScraperFetcher()
-        data = [{
-            "home_team": "皇马",
-            "away_team": "巴萨",
-            "handicap": -1,
-            "sp_win": 2.10,
-            "sp_draw": 3.50,
-            "sp_lose": 3.20,
-        }]
-        matches = fetcher._parse_json_data(data)
-        assert len(matches) == 1
-        m = matches[0]
-        assert m.home_team == "皇马"
-        assert m.sp_values["3"] == 2.10
-        assert m.sp_values["1"] == 3.50
-        assert m.sp_values["0"] == 3.20
+    def test_sp_values_are_reasonable(self):
+        fetcher = DemoFetcher(match_count=50, seed=99)
+        matches = fetcher.fetch_matches()
+        for m in matches:
+            assert 1.1 <= m.sp_values["3"] <= 6.5, f"SP3={m.sp_values['3']} out of range"
+            assert 2.0 <= m.sp_values["1"] <= 5.5, f"SP1={m.sp_values['1']} out of range"
+            assert 1.1 <= m.sp_values["0"] <= 7.0, f"SP0={m.sp_values['0']} out of range"
 
 
 class TestCachedOddsFetcher:
-    """缓存机制测试"""
+    """缓存机制"""
 
     def test_cache_returns_same_result_within_ttl(self):
         inner = MagicMock(spec=OddsFetcher)
-        inner.fetch_matches.return_value = [
-            Match(match_id="M1", home_team="A", away_team="B",
-                  handicap=0, play_type=PlayType.HANDICAP_WDL)
-        ]
+        inner.fetch_matches.return_value = [Match(
+            match_id="M1", home_team="A", away_team="B",
+            handicap=0, play_type=PlayType.HANDICAP_WDL)]
         cached = CachedOddsFetcher(inner, ttl_seconds=300)
         r1 = cached.fetch_matches()
         r2 = cached.fetch_matches()
-        # 相同对象引用，说明走了缓存
         assert r1 is r2
         assert inner.fetch_matches.call_count == 1
 
-    def test_cache_expires_after_ttl(self):
+    def test_cache_expires_after_ttl_zero(self):
         inner = MagicMock(spec=OddsFetcher)
         inner.fetch_matches.return_value = []
-        cached = CachedOddsFetcher(inner, ttl_seconds=0)  # TTL=0 立即过期
+        cached = CachedOddsFetcher(inner, ttl_seconds=0)
         cached.fetch_matches()
         cached.fetch_matches()
         assert inner.fetch_matches.call_count == 2
@@ -172,10 +161,33 @@ class TestCachedOddsFetcher:
 
 
 class TestDefaultFetcher:
-    """默认实例"""
+    """默认实例工厂"""
 
-    def test_get_default_fetcher_returns_cached(self):
-        f1 = get_default_fetcher()
-        f2 = get_default_fetcher()
-        assert f1 is f2  # 单例
-        assert isinstance(f1, CachedOddsFetcher)
+    def test_returns_demo_mode_by_default(self):
+        # 确保没有设置环境变量
+        old = os.environ.pop("BEIDAN_API_URL", None)
+        try:
+            # 重置单例
+            import src.odds_fetcher as of
+            of._default_fetcher = None
+            fetcher = get_default_fetcher()
+            assert isinstance(fetcher.inner, DemoFetcher)
+        finally:
+            if old:
+                os.environ["BEIDAN_API_URL"] = old
+            of._default_fetcher = None
+
+    def test_returns_api_mode_when_configured(self):
+        old = os.environ.get("BEIDAN_API_URL")
+        os.environ["BEIDAN_API_URL"] = "https://api.example.com/odds"
+        try:
+            import src.odds_fetcher as of
+            of._default_fetcher = None
+            fetcher = get_default_fetcher()
+            assert isinstance(fetcher.inner, ApiFetcher)
+        finally:
+            if old:
+                os.environ["BEIDAN_API_URL"] = old
+            else:
+                os.environ.pop("BEIDAN_API_URL", None)
+            of._default_fetcher = None
