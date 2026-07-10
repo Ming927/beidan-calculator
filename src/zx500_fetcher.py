@@ -140,6 +140,12 @@ def _parse_html(html: str, expect: str) -> dict:
                     "平-胜": "1-3", "平-平": "1-1", "平-负": "1-0",
                     "负-胜": "0-3", "负-平": "0-1", "负-负": "0-0",
                 }.get(result_text, result_text)
+            elif play_name == "总进球数":
+                try:
+                    n = int(result_text)
+                    normalized = "7+" if n >= 7 else str(n)
+                except ValueError:
+                    normalized = result_text
             plays[play_name] = {"result": normalized, "sp": sp_val}
 
         matches.append({

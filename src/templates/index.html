@@ -86,7 +86,7 @@ button{cursor:pointer;transition:all .2s}
 
 <!-- Step 3: 串关级别 -->
 <div class="card" id="parlay-card" style="display:none">
-<h2>③ 串关级别 <span class="hint">（比分/下半场比分最多3串1，超过自动跳过）</span></h2>
+<h2>③ 串关级别 <span class="hint">（上限15串1；比分/下半场比分最高3串1，总进球/上下单双/半全场最高6串1，超限自动降级）</span></h2>
 <div id="parlay-chips"></div>
 <div style="margin-top:8px">
 <label>倍数: <input id="multiplier" type="number" value="1" min="1" max="99"></label>
@@ -186,7 +186,7 @@ function updateParlayLevels() {
     if (n < 2) { container.innerHTML = '<span class="hint">至少选2场才能串关</span>'; return; }
     selectedLevels = new Set();
     let html = '';
-    for (let k = n; k >= 2; k--) {
+    for (let k = Math.min(n, 15); k >= 2; k--) {
         html += `<span class="chip" onclick="toggleLevel(${k})" id="lvl-${k}">${k}串1 (${combCount(n,k)}注)</span>`;
     }
     container.innerHTML = html;
