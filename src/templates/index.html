@@ -74,9 +74,22 @@ button{cursor:pointer;transition:all .2s}
 <!-- Step 2: 比赛列表 -->
 <div class="card" id="matches-card" style="display:none">
 <h2>② 选择场次 <span class="hint" id="match-count"></span></h2>
-<div style="margin-bottom:8px">
-<button class="chip active" onclick="selectAll()">全选</button>
+<div style="margin-bottom:8px;display:flex;flex-wrap:wrap;gap:4px;align-items:center">
+<button class="chip active" onclick="selectAll()">比分SP最高15场</button>
 <button class="chip" onclick="deselectAll()">清空</button>
+<span style="width:1px;background:#ddd;height:20px;margin:0 4px"></span>
+<select id="sp-play-type" style="font-size:11px;padding:3px" onchange="updateSPButtons()">
+    <option value="让球胜平负">胜平负</option>
+    <option value="总进球数">总进球</option>
+    <option value="比分" selected>比分</option>
+    <option value="上下单双">上下单双</option>
+    <option value="半全场">半全场</option>
+</select>
+<button class="chip" onclick="selectBySP('high')" id="btn-sp-high">最高SP</button>
+<button class="chip" onclick="selectBySP('low')" id="btn-sp-low">最低SP</button>
+<span style="width:1px;background:#ddd;height:20px;margin:0 4px"></span>
+<input id="random-count" type="number" value="5" min="1" max="15" style="width:50px;font-size:11px;padding:3px">
+<button class="chip" onclick="selectRandom()">随机选</button>
 </div>
 <div style="max-height:400px;overflow-y:auto">
 <table class="match-table">
@@ -190,6 +203,34 @@ function selectAll() {
     updateParlayLevels(); renderMatches();
 }
 function deselectAll() { selectedIds = new Set(); updateParlayLevels(); renderMatches(); }
+
+function selectBySP(which) {
+    const pt = document.getElementById('sp-play-type').value;
+    const sorted = [...issueData.matches].sort((a,b) => {
+        const sa = a.plays[pt]?.sp || 0, sb = b.plays[pt]?.sp || 0;
+        return which === 'high' ? sb - sa : sa - sb;
+    });
+    selectedIds = new Set(sorted.slice(0, 15).map(m=>m.id));
+    updateParlayLevels(); renderMatches();
+}
+
+function selectRandom() {
+    const n = Math.min(parseInt(document.getElementById('random-count').value) || 5, 15);
+    const pool = [...issueData.matches];
+    // Fisher-Yates shuffle
+    for (let i = pool.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [pool[i], pool[j]] = [pool[j], pool[i]];
+    }
+    selectedIds = new Set(pool.slice(0, n).map(m=>m.id));
+    updateParlayLevels(); renderMatches();
+}
+
+function updateSPButtons() {
+    const pt = document.getElementById('sp-play-type').value;
+    document.getElementById('btn-sp-high').textContent = pt + '最高SP';
+    document.getElementById('btn-sp-low').textContent = pt + '最低SP';
+}
 
 // ── Step 3: 串关级别 ──
 function updateParlayLevels() {
