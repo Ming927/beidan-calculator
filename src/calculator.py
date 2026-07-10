@@ -1,7 +1,7 @@
 """奖金计算器 - 核心奖金计算：SP连乘 → 65%返奖 → 500万封顶 → 1万纳税。"""
 
 from src.models import (
-    Match, Ticket, BetSelection, ParlayConfig,
+    Match, Ticket, BetSelection, ParlayConfig, PlayType,
     SubTicketResult, CalculationResult,
 )
 from src.result_resolver import resolve_bet
@@ -144,3 +144,112 @@ def calculate(ticket: Ticket, match_map: dict[str, Match]) -> CalculationResult:
         net_profit=net_profit,
         breakdown=breakdown,
     )
+
+
+def calculate_batch(
+    matches: list[Match],
+    play_types: list[PlayType],
+    parlay_levels: list[int],
+    multiplier: int = 1,
+) -> dict:
+    """批量计算：对每种玩法，生成 C(n,k) 个组合并计算奖金。
+
+    参数:
+        matches: 选中的比赛列表
+        play_types: 要计算的玩法列表
+        parlay_levels: 串关级别列表，如 [2, 3, 4]
+        multiplier: 倍数
+
+    返回:
+        {"results": {play_type_name: {
+            "total_prize": float, "total_cost": float, "net_profit": float,
+            "combos": [{combo_desc, match_ids, won, sp_product, prize_before_tax, tax, prize_after_tax}, ...]
+        }}, "grand_total": float}
+    """
+    from itertools import combinations
+    from src.result_resolver import resolve_bet
+
+    results = {}
+
+    for pt in play_types:
+        # 筛选该玩法的比赛
+        pt_matches = [m for m in matches if m.play_type == pt]
+        if len(pt_matches) < 2:
+            continue
+
+        n = len(pt_matches)
+        match_map = {m.match_id: m for m in pt_matches}
+        all_combos = []
+
+        for k in parlay_levels:
+            if k > n:
+                continue
+            for combo_indices in combinations(range(n), k):
+                combo_matches = [pt_matches[i] for i in combo_indices]
+                match_ids = [m.match_id for m in combo_matches]
+
+                # 计算该组合
+                sp_product = 1.0
+                all_won = True
+                for m in combo_matches:
+                    from src.models import BetSelection
+                    from src.result_resolver import resolve_bet
+                    bet = BetSelection(
+                        match_id=m.match_id,
+                        play_type=pt,
+                        selected_option=list(m.sp_values.keys())[0],
+                    )
+                    won, sp = resolve_bet(m, bet)
+                    if not won:
+                        all_won = False
+                        break
+                    sp_product *= sp
+
+                combo_desc = f"{k}串1"
+                if not all_won:
+                    all_combos.append({
+                        "combo_desc": combo_desc,
+                        "match_ids": match_ids,
+                        "sp_product": 0.0,
+                        "won": False,
+                        "prize_before_tax": 0.0,
+                        "tax": 0.0,
+                        "prize_after_tax": 0.0,
+                    })
+                    continue
+
+                prize_before_tax = BASE_AMOUNT * sp_product * RETURN_RATE * multiplier
+                if prize_before_tax > MAX_PRIZE:
+                    prize_before_tax = MAX_PRIZE
+                tax = prize_before_tax * TAX_RATE if prize_before_tax > TAX_THRESHOLD else 0.0
+                prize_after_tax = prize_before_tax - tax
+
+                all_combos.append({
+                    "combo_desc": combo_desc,
+                    "match_ids": match_ids,
+                    "sp_product": round(sp_product, 4),
+                    "won": True,
+                    "prize_before_tax": round(prize_before_tax, 2),
+                    "tax": round(tax, 2),
+                    "prize_after_tax": round(prize_after_tax, 2),
+                })
+
+        total_prize = sum(c["prize_after_tax"] for c in all_combos)
+        total_cost = BASE_AMOUNT * len(all_combos) * multiplier
+        net_profit = round(total_prize - total_cost, 2)
+
+        results[pt.value] = {
+            "total_prize": round(total_prize, 2),
+            "total_cost": total_cost,
+            "net_profit": net_profit,
+            "combo_count": len(all_combos),
+            "combos": sorted(all_combos, key=lambda c: (c["won"], c["prize_after_tax"]), reverse=True),
+        }
+
+    grand_total = sum(r["total_prize"] for r in results.values())
+
+    return {
+        "results": results,
+        "grand_total": round(grand_total, 2),
+        "play_types_count": len(results),
+    }

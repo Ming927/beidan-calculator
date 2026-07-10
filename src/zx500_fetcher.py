@@ -130,7 +130,11 @@ def _parse_html(html: str, expect: str) -> dict:
                 sp_val = float(sp_text)
             except ValueError:
                 sp_val = 0.0
-            plays[play_name] = {"result": result_text, "sp": sp_val}
+            # 标准化结果名: 让球胜平负的 "胜/平/负" → "3/1/0"
+            normalized = result_text
+            if play_name == "让球胜平负":
+                normalized = {"胜": "3", "平": "1", "负": "0"}.get(result_text, result_text)
+            plays[play_name] = {"result": normalized, "sp": sp_val}
 
         matches.append({
             "id": match_id,

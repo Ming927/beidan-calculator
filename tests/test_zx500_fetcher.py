@@ -73,8 +73,8 @@ class TestParseHTML:
         assert m1["score_half"] == (0, 1)
         assert m1["score_full"] == (3, 2)
 
-        # 让球胜平负
-        assert m1["plays"]["让球胜平负"]["result"] == "平"
+        # 让球胜平负 (500.com 原始值 "平" 在 _parse_html 中标准化为 "1")
+        assert m1["plays"]["让球胜平负"]["result"] == "1"
         assert m1["plays"]["让球胜平负"]["sp"] == 3.68
         # 总进球数
         assert m1["plays"]["总进球数"]["result"] == "5"
@@ -99,7 +99,7 @@ class TestBuildMatchObjects:
         assert len(matches) == 2
         m = matches[0]
         assert m.play_type == PlayType.HANDICAP_WDL
-        assert m.sp_values["平"] == 3.68
+        assert m.sp_values["1"] == 3.68  # 500.com "平" → 标准化为 "1"
         assert m.result.home_score == 3
         assert m.result.away_score == 2
         assert m.result.half_home_score == 0
