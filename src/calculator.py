@@ -182,9 +182,11 @@ def calculate_batch(
         all_combos = []
 
         max_level = PLAY_TYPE_MAX_PARLAY.get(pt, 15)
+        # 每个玩法按自己的最高串关限制降级：选4关→比分自动降为3串1
+        effective_levels = set()
         for k in parlay_levels:
-            if k > n or k > max_level:
-                continue
+            effective_levels.add(min(k, max_level, n))
+        for k in sorted(effective_levels, reverse=True):
             for combo_indices in combinations(range(n), k):
                 combo_matches = [pt_matches[i] for i in combo_indices]
                 match_ids = [m.match_id for m in combo_matches]
