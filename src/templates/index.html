@@ -1,0 +1,456 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>北单奖金计算器</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:#f0f2f5;color:#333;line-height:1.6}
+.container{max-width:1200px;margin:0 auto;padding:20px}
+h1{text-align:center;color:#1a1a2e;margin-bottom:8px;font-size:24px}
+.subtitle{text-align:center;color:#666;margin-bottom:24px;font-size:14px}
+
+.card{background:#fff;border-radius:8px;box-shadow:0 2px 8px rgba(0,0,0,0.1);padding:20px;margin-bottom:20px}
+.card h2{font-size:18px;color:#1a1a2e;margin-bottom:16px;padding-bottom:8px;border-bottom:2px solid #e8e8e8}
+
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:16px}
+
+.match-item{border:1px solid #d9d9d9;border-radius:6px;padding:16px;position:relative}
+.match-item h3{font-size:15px;margin-bottom:10px;color:#1a1a2e}
+.match-row{display:flex;gap:8px;margin-bottom:8px;align-items:center}
+.match-row label{min-width:50px;font-size:13px;color:#666;flex-shrink:0}
+.match-row input,.match-row select{flex:1;padding:6px 8px;border:1px solid #d9d9d9;border-radius:4px;font-size:13px}
+.match-row input[type=number]{width:70px;flex:0 0 70px}
+
+.sp-area{margin-top:8px}
+.sp-area label{font-size:13px;color:#666;display:block;margin-bottom:4px}
+.sp-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(100px,1fr));gap:4px}
+.sp-item{display:flex;align-items:center;gap:4px;font-size:12px}
+.sp-item input{width:60px;padding:3px 4px;border:1px solid #d9d9d9;border-radius:3px;font-size:12px}
+
+.bet-select{margin-top:8px;padding:8px;background:#fffbe6;border-radius:4px}
+.bet-select label{font-size:13px;color:#333;font-weight:600}
+.option-btns{display:flex;flex-wrap:wrap;gap:4px;margin-top:4px}
+.option-btn{padding:4px 10px;border:1px solid #d9d9d9;border-radius:4px;background:#fff;cursor:pointer;font-size:12px;transition:all .2s}
+.option-btn:hover{border-color:#1890ff;color:#1890ff}
+.option-btn.selected{background:#1890ff;color:#fff;border-color:#1890ff}
+
+.btn{padding:8px 16px;border:1px solid #d9d9d9;border-radius:4px;cursor:pointer;font-size:13px;transition:all .2s}
+.btn-primary{background:#1890ff;color:#fff;border-color:#1890ff}
+.btn-primary:hover{background:#40a9ff}
+.btn-danger{background:#ff4d4f;color:#fff;border-color:#ff4d4f}
+.btn-danger:hover{background:#ff7875}
+.btn-default:hover{border-color:#1890ff;color:#1890ff}
+.btn-group{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+
+.parlay-section{margin-top:12px}
+.parlay-mode-tabs{display:flex;gap:4px;margin-bottom:12px}
+.parlay-tab{padding:8px 16px;border:1px solid #d9d9d9;border-radius:4px;cursor:pointer;font-size:13px;transition:all .2s}
+.parlay-tab.active{background:#1890ff;color:#fff;border-color:#1890ff}
+
+.preset-grid{display:flex;flex-wrap:wrap;gap:4px;margin-top:8px}
+.preset-btn{padding:4px 10px;border:1px solid #d9d9d9;border-radius:4px;background:#fff;cursor:pointer;font-size:12px}
+.preset-btn:hover{border-color:#1890ff;color:#1890ff}
+.preset-btn.selected{background:#1890ff;color:#fff;border-color:#1890ff}
+
+.level-grid{display:flex;flex-wrap:wrap;gap:4px;margin-top:8px}
+.level-cb{display:flex;align-items:center;gap:4px;font-size:12px;cursor:pointer}
+
+.summary{text-align:center;padding:12px;background:#f6ffed;border-radius:4px;margin-top:12px;font-size:13px;color:#52c41a}
+
+.result-table{width:100%;border-collapse:collapse;margin-top:12px;font-size:13px}
+.result-table th{background:#fafafa;padding:8px;text-align:left;border-bottom:2px solid #e8e8e8;font-weight:600}
+.result-table td{padding:8px;border-bottom:1px solid #e8e8e8}
+.result-table .won{color:#52c41a;font-weight:600}
+.result-table .lost{color:#ff4d4f}
+.result-summary{display:flex;justify-content:space-around;padding:16px;background:#fafafa;border-radius:6px;margin-top:12px}
+.result-stat{text-align:center}
+.result-stat .val{font-size:28px;font-weight:700}
+.result-stat .profit{color:#52c41a}
+.result-stat .cost{color:#ff4d4f}
+
+.history-item{padding:12px;border:1px solid #e8e8e8;border-radius:6px;margin-bottom:8px;cursor:pointer;transition:all .2s}
+.history-item:hover{border-color:#1890ff;box-shadow:0 2px 4px rgba(24,144,255,0.15)}
+.history-item .meta{display:flex;justify-content:space-between;font-size:12px;color:#999}
+
+.error-msg{color:#ff4d4f;font-size:13px;margin-top:4px}
+.empty-msg{text-align:center;color:#999;padding:40px;font-size:14px}
+.loading{text-align:center;padding:20px;color:#999}
+</style>
+</head>
+<body>
+<div class="container">
+<h1>北单奖金计算器</h1>
+<p class="subtitle">北京单场 · 7种玩法 · 单关/M串N/自由过关 · 自动计算奖金</p>
+
+<!-- 比赛管理 -->
+<div class="card">
+<h2>比赛数据</h2>
+<div class="grid" id="matches-container"></div>
+<div class="btn-group">
+<button class="btn btn-primary" onclick="addMatch()">+ 添加比赛</button>
+</div>
+<div class="summary" id="match-summary">已添加 0 场比赛</div>
+</div>
+
+<!-- 串关配置 & 投注 -->
+<div class="card">
+<h2>串关配置</h2>
+<div class="parlay-mode-tabs">
+<button class="parlay-tab active" onclick="setParlayMode('single')" id="tab-single">单关</button>
+<button class="parlay-tab" onclick="setParlayMode('m_n')" id="tab-m_n">M串N</button>
+<button class="parlay-tab" onclick="setParlayMode('free_parlay')" id="tab-free_parlay">自由过关</button>
+</div>
+<div id="parlay-config-area"></div>
+<div style="margin-top:12px">
+<label>倍数：<input type="number" id="multiplier" value="1" min="1" max="99" style="width:70px;padding:6px;border:1px solid #d9d9d9;border-radius:4px"></label>
+</div>
+<div class="summary" id="preview-summary">总注数: 0 | 总金额: ¥0.00</div>
+<div class="btn-group">
+<button class="btn btn-primary" onclick="calculatePrize()" style="font-size:16px;padding:10px 32px">💰 计算奖金</button>
+</div>
+<div id="calc-error" class="error-msg"></div>
+</div>
+
+<!-- 计算结果 -->
+<div class="card" id="result-card" style="display:none">
+<h2>计算结果</h2>
+<div class="result-summary">
+<div class="result-stat">
+<div style="font-size:13px;color:#999">总投入</div>
+<div class="val cost" id="res-cost">¥0</div>
+</div>
+<div class="result-stat">
+<div style="font-size:13px;color:#999">总奖金(税后)</div>
+<div class="val profit" id="res-prize">¥0</div>
+</div>
+<div class="result-stat">
+<div style="font-size:13px;color:#999">净收益</div>
+<div class="val" id="res-profit" style="color:#1a1a2e">¥0</div>
+</div>
+</div>
+<table class="result-table">
+<thead><tr><th>组合</th><th>场次</th><th>SP乘积</th><th>中奖</th><th>税前</th><th>税金</th><th>税后</th></tr></thead>
+<tbody id="result-body"></tbody>
+</table>
+</div>
+
+<!-- 历史记录 -->
+<div class="card">
+<h2>历史投注</h2>
+<div id="history-list"><div class="empty-msg">暂无记录</div></div>
+</div>
+</div>
+
+<script>
+// ── 全局状态 ──
+let matches = [];
+let matchCounter = 0;
+let parlayMode = 'single';
+let selectedPreset = null;
+let selectedLevels = [];
+let configData = null;
+
+// ── 初始化 ──
+async function init() {
+    try {
+        const resp = await fetch('/api/config');
+        configData = await resp.json();
+    } catch(e) { console.error('Failed to load config:', e); }
+    addMatch();
+    updateParlayUI();
+    loadHistory();
+}
+
+// ── 比赛管理 ──
+function addMatch() {
+    const id = `M${++matchCounter}`;
+    matches.push({id, home_team:'', away_team:'', play_type:'让球胜平负', handicap:0, status:'completed',
+        result:{home_score:0, away_score:0, half_home_score:0, half_away_score:0, second_half_home_score:0, second_half_away_score:0},
+        sp_values:{}, selected_option:null});
+    renderMatches();
+}
+
+function removeMatch(idx) {
+    matches.splice(idx, 1);
+    renderMatches();
+}
+
+function updateMatch(idx, field, value) {
+    if (field.startsWith('result.')) {
+        const key = field.split('.')[1];
+        matches[idx].result[key] = parseInt(value) || 0;
+    } else if (field.startsWith('sp.')) {
+        const key = field.split('.')[1];
+        matches[idx].sp_values[key] = parseFloat(value) || 0;
+    } else {
+        matches[idx][field] = value;
+    }
+    updatePreview();
+}
+
+function selectOption(idx, option) {
+    matches[idx].selected_option = option;
+    renderMatches();
+}
+
+function renderMatches() {
+    const container = document.getElementById('matches-container');
+    container.innerHTML = matches.map((m, i) => {
+        const playType = m.play_type;
+        const options = configData ? configData.play_types[playType] : [];
+        const needsHandicap = playType === '让球胜平负';
+        const needsHalfResult = playType === '半全场胜平负';
+        const needsSecondHalf = playType === '下半场比分';
+
+        let resultHtml = `
+        <div class="match-row"><label>全场比分</label>
+        主<input type="number" value="${m.result.home_score}" onchange="updateMatch(${i},'result.home_score',this.value)" style="width:50px" min="0" max="99"> :
+        客<input type="number" value="${m.result.away_score}" onchange="updateMatch(${i},'result.away_score',this.value)" style="width:50px" min="0" max="99">
+        </div>`;
+
+        if (needsHalfResult) {
+            resultHtml += `
+            <div class="match-row"><label>半场比分</label>
+            主<input type="number" value="${m.result.half_home_score}" onchange="updateMatch(${i},'result.half_home_score',this.value)" style="width:50px" min="0" max="99"> :
+            客<input type="number" value="${m.result.half_away_score}" onchange="updateMatch(${i},'result.half_away_score',this.value)" style="width:50px" min="0" max="99">
+            </div>`;
+        }
+        if (needsSecondHalf) {
+            resultHtml += `
+            <div class="match-row"><label>下半场比分</label>
+            主<input type="number" value="${m.result.second_half_home_score}" onchange="updateMatch(${i},'result.second_half_home_score',this.value)" style="width:50px" min="0" max="99"> :
+            客<input type="number" value="${m.result.second_half_away_score}" onchange="updateMatch(${i},'result.second_half_away_score',this.value)" style="width:50px" min="0" max="99">
+            </div>`;
+        }
+
+        let spHtml = '<div class="sp-area"><label>SP值</label><div class="sp-grid">';
+        for (const opt of (options || [])) {
+            spHtml += `<div class="sp-item">${opt}<input type="number" value="${m.sp_values[opt]||''}" onchange="updateMatch(${i},'sp.${opt}',this.value)" step="0.01" min="0"></div>`;
+        }
+        spHtml += '</div></div>';
+
+        let betHtml = '<div class="bet-select"><label>投注选项：</label><div class="option-btns">';
+        for (const opt of (options || [])) {
+            const selClass = m.selected_option === opt ? ' selected' : '';
+            betHtml += `<button class="option-btn${selClass}" onclick="selectOption(${i},'${opt}')">${opt}</button>`;
+        }
+        betHtml += '</div></div>';
+
+        return `
+        <div class="match-item">
+        <h3>比赛 #${i+1} <button class="btn btn-danger" style="float:right;padding:2px 8px;font-size:11px" onclick="removeMatch(${i})">×</button></h3>
+        <div class="match-row"><label>比赛ID</label><input value="${m.id}" onchange="updateMatch(${i},'id',this.value)"></div>
+        <div class="match-row"><label>主队</label><input value="${m.home_team}" onchange="updateMatch(${i},'home_team',this.value)" placeholder="主队名"></div>
+        <div class="match-row"><label>客队</label><input value="${m.away_team}" onchange="updateMatch(${i},'away_team',this.value)" placeholder="客队名"></div>
+        <div class="match-row"><label>玩法</label><select onchange="updateMatch(${i},'play_type',this.value)">${getPlayTypeOptions(playType)}</select></div>
+        ${needsHandicap ? `<div class="match-row"><label>让球</label><input type="number" value="${m.handicap}" onchange="updateMatch(${i},'handicap',this.value)" style="width:60px"> (负=主让, 正=主受让)</div>` : ''}
+        <div class="match-row"><label>状态</label><select onchange="updateMatch(${i},'status',this.value)">
+        <option value="completed" ${m.status==='completed'?'selected':''}>已完成</option>
+        <option value="postponed" ${m.status==='postponed'?'selected':''}>延期</option>
+        <option value="cancelled" ${m.status==='cancelled'?'selected':''}>取消</option>
+        </select></div>
+        ${resultHtml}
+        ${spHtml}
+        ${betHtml}
+        </div>`;
+    }).join('');
+    document.getElementById('match-summary').textContent = `已添加 ${matches.length} 场比赛`;
+    updateParlayUI();
+    updatePreview();
+}
+
+function getPlayTypeOptions(current) {
+    const types = ['让球胜平负','总进球数','上下盘单双数','半全场胜平负','比分','胜负过关','下半场比分'];
+    return types.map(t => `<option value="${t}" ${t===current?'selected':''}>${t}</option>`).join('');
+}
+
+// ── 串关配置 ──
+function setParlayMode(mode) {
+    parlayMode = mode;
+    selectedPreset = null;
+    selectedLevels = [];
+    document.querySelectorAll('.parlay-tab').forEach(t => t.classList.remove('active'));
+    document.getElementById('tab-'+mode).classList.add('active');
+    updateParlayUI();
+}
+
+function updateParlayUI() {
+    const area = document.getElementById('parlay-config-area');
+    const m = matches.length;
+    if (m === 0) { area.innerHTML = '<div class="empty-msg">请先添加比赛</div>'; return; }
+
+    if (parlayMode === 'single') {
+        area.innerHTML = `<p style="font-size:13px;color:#666">单关模式：每场比赛独立计算奖金 (共${m}注)</p>`;
+    } else if (parlayMode === 'm_n') {
+        let html = '<div class="preset-grid"><button class="preset-btn'+(selectedPreset===m+',1'?' selected':'')+'" onclick="selectPreset(\''+m+',1\')">'+m+'串1</button>';
+        if (configData && configData.m_n_presets) {
+            for (const [key, preset] of Object.entries(configData.m_n_presets)) {
+                if (preset.m === m) {
+                    html += `<button class="preset-btn${selectedPreset===key?' selected':''}" onclick="selectPreset('${key}')" title="${preset.breakdown.join(', ')}">${key}</button>`;
+                }
+            }
+        }
+        html += '</div>';
+        if (selectedPreset) {
+            html += `<p style="font-size:12px;color:#999;margin-top:8px">已选: ${selectedPreset}</p>`;
+        }
+        area.innerHTML = html;
+    } else { // free_parlay
+        let html = '<div class="level-grid"><span style="font-size:13px">选择关次：</span>';
+        const maxLevel = Math.min(m, configData ? (configData.max_parlay[matches[0]?.play_type] || 15) : 15);
+        for (let k = 2; k <= maxLevel; k++) {
+            const checked = selectedLevels.includes(k) ? ' checked' : '';
+            html += `<label class="level-cb"><input type="checkbox" value="${k}"${checked} onchange="toggleLevel(${k})">${k}串1</label>`;
+        }
+        html += '</div>';
+        area.innerHTML = html;
+    }
+    updatePreview();
+}
+
+function selectPreset(key) {
+    selectedPreset = key;
+    updateParlayUI();
+}
+
+function toggleLevel(k) {
+    const idx = selectedLevels.indexOf(k);
+    if (idx >= 0) selectedLevels.splice(idx, 1);
+    else selectedLevels.push(k);
+    updatePreview();
+}
+
+function updatePreview() {
+    const m = matches.length;
+    if (m === 0) { document.getElementById('preview-summary').innerHTML='总注数: 0 | 总金额: ¥0.00'; return; }
+
+    let count = 0;
+    if (parlayMode === 'single') {
+        count = m;
+    } else if (parlayMode === 'm_n' && selectedPreset) {
+        const [pm, pn] = selectedPreset.split(',').map(Number);
+        if (configData && configData.m_n_presets && configData.m_n_presets[selectedPreset]) {
+            const preset = configData.m_n_presets[selectedPreset];
+            count = preset.breakdown.reduce((sum, b) => {
+                const cnt = parseInt(b);
+                return sum + (isNaN(cnt) ? 0 : cnt);
+            }, 0);
+        }
+    } else if (parlayMode === 'free_parlay') {
+        for (const k of selectedLevels) {
+            count += combCount(m, k);
+        }
+    }
+
+    const multiplier = parseInt(document.getElementById('multiplier').value) || 1;
+    const total = count * 2 * multiplier;
+    document.getElementById('preview-summary').innerHTML = `总注数: ${count} | 总金额: ¥${total.toFixed(2)}`;
+}
+
+function combCount(n, k) {
+    if (k < 0 || k > n) return 0;
+    let r = 1;
+    for (let i = 1; i <= k; i++) r = r * (n - k + i) / i;
+    return Math.round(r);
+}
+
+// ── 奖金计算 ──
+async function calculatePrize() {
+    const errorDiv = document.getElementById('calc-error');
+    const resultCard = document.getElementById('result-card');
+    errorDiv.textContent = '';
+    resultCard.style.display = 'none';
+
+    // 构建请求
+    const bets = [];
+    const matchesData = {};
+    for (const m of matches) {
+        if (!m.selected_option) {
+            errorDiv.textContent = `请为比赛 "${m.id}" 选择投注选项`;
+            return;
+        }
+        bets.push({match_id: m.id, play_type: m.play_type, selected_option: m.selected_option});
+        matchesData[m.id] = {
+            home_team: m.home_team, away_team: m.away_team,
+            handicap: m.handicap, play_type: m.play_type,
+            status: m.status,
+            result: m.status === 'completed' ? m.result : null,
+            sp_values: m.sp_values,
+        };
+    }
+
+    let parlay;
+    if (parlayMode === 'single') {
+        parlay = {mode: 'single'};
+    } else if (parlayMode === 'm_n') {
+        if (!selectedPreset) { errorDiv.textContent = '请选择M串N预设组合'; return; }
+        const [pm, pn] = selectedPreset.split(',').map(Number);
+        parlay = {mode: 'm_n', m: pm, n: pn};
+    } else {
+        if (selectedLevels.length === 0) { errorDiv.textContent = '请至少选择一个关次'; return; }
+        parlay = {mode: 'free_parlay', m: matches.length, selected_levels: selectedLevels};
+    }
+
+    const payload = {bets, parlay, multiplier: parseInt(document.getElementById('multiplier').value)||1, matches: matchesData};
+
+    try {
+        const resp = await fetch('/api/calculate', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)});
+        const data = await resp.json();
+        if (!data.success) { errorDiv.textContent = data.error; return; }
+
+        // 展示结果
+        document.getElementById('res-cost').textContent = '¥'+data.result.total_cost.toFixed(2);
+        document.getElementById('res-prize').textContent = '¥'+data.result.total_prize.toFixed(2);
+        const profit = data.result.net_profit;
+        const profitEl = document.getElementById('res-profit');
+        profitEl.textContent = (profit>=0?'+':'')+'¥'+profit.toFixed(2);
+        profitEl.style.color = profit >= 0 ? '#52c41a' : '#ff4d4f';
+
+        const tbody = document.getElementById('result-body');
+        tbody.innerHTML = data.result.breakdown.map(b => `
+        <tr>
+        <td>${b.combo_desc}</td>
+        <td>${b.match_ids.join(', ')}</td>
+        <td>${b.won ? b.sp_product.toFixed(2) : '-'}</td>
+        <td class="${b.won?'won':'lost'}">${b.won?'中奖':'未中'}</td>
+        <td>¥${b.prize_before_tax.toFixed(2)}</td>
+        <td>¥${b.tax.toFixed(2)}</td>
+        <td style="font-weight:600">¥${b.prize_after_tax.toFixed(2)}</td>
+        </tr>`).join('');
+
+        resultCard.style.display = 'block';
+        resultCard.scrollIntoView({behavior:'smooth'});
+        loadHistory(); // 刷新历史
+    } catch(e) {
+        errorDiv.textContent = '网络错误: ' + e.message;
+    }
+}
+
+// ── 历史记录 ──
+async function loadHistory() {
+    try {
+        const resp = await fetch('/api/history');
+        const data = await resp.json();
+        const list = document.getElementById('history-list');
+        if (!data.tickets || data.tickets.length === 0) {
+            list.innerHTML = '<div class="empty-msg">暂无记录</div>';
+            return;
+        }
+        list.innerHTML = data.tickets.map(t => `
+        <div class="history-item">
+        <div class="meta"><span>#${t.ticket_id}</span><span>${t.created_at?.slice(0,19)||''}</span></div>
+        <div style="font-size:13px;margin-top:4px">
+        ${t.bets.map(b=>b.match_id+':'+b.selected_option).join(' | ')}
+        </div>
+        <div style="font-size:12px;color:#999">${t.parlay.mode==='single'?'单关':(t.parlay.mode==='m_n'?t.parlay.m+'串'+t.parlay.n:'自由过关')} · ${t.multiplier}倍</div>
+        </div>`).join('');
+    } catch(e) { console.error('History load error:', e); }
+}
+
+// ── 启动 ──
+init();
+</script>
+</body>
+</html>
