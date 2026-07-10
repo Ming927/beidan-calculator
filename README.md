@@ -29,7 +29,6 @@ python -m src.app
 | 半全场胜平负 | 9 | 6串1 |
 | 比分 | 25 | 3串1 |
 | 胜负过关 | 2 | 15串1 |
-| 下半场比分 | 25 | 3串1 |
 
 ## 奖金规则
 
@@ -51,7 +50,7 @@ src/
 ├── storage.py           # JSON文件存储
 ├── app.py               # Flask Web API
 └── templates/index.html # 前端页面
-tests/                   # 162个测试
+tests/                   # 161个测试
 ```
 
 ## 运行测试

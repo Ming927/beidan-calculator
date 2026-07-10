@@ -170,7 +170,7 @@ def _parse_html(html: str, expect: str) -> dict:
                     normalized = "7+" if n >= 7 else str(n)
                 except ValueError:
                     normalized = result_text
-            elif play_name == "比分" or play_name == "下半场比分":
+            elif play_name == "比分":
                 normalized = _normalize_score(result_text)
             plays[play_name] = {"result": normalized, "sp": sp_val}
 

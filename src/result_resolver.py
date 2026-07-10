@@ -126,10 +126,6 @@ def resolve_bet(match: Match, bet: BetSelection) -> tuple[bool, float]:
         actual = resolve_correct_score(r.home_score, r.away_score)
     elif play_type == PlayType.WIN_LOSE_PASS:
         actual = resolve_win_lose_pass(r.home_score, r.away_score)
-    elif play_type == PlayType.SECOND_HALF_SCORE:
-        actual = resolve_correct_score(
-            r.second_half_home_score, r.second_half_away_score
-        )
     else:
         raise ValueError(f"未知玩法类型: {play_type}")
 

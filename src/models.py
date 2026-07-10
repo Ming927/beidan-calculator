@@ -14,7 +14,6 @@ class PlayType(Enum):
     HALF_FULL_WDL = "半全场胜平负"
     CORRECT_SCORE = "比分"
     WIN_LOSE_PASS = "胜负过关"
-    SECOND_HALF_SCORE = "下半场比分"
 
 
 class MatchStatus(Enum):
@@ -48,12 +47,6 @@ PLAY_TYPE_OPTIONS: dict[PlayType, list[str]] = {
         "胜其他", "平其他", "负其他",
     ],
     PlayType.WIN_LOSE_PASS: ["3", "0"],
-    PlayType.SECOND_HALF_SCORE: [
-        "1:0", "2:0", "2:1", "3:0", "3:1", "3:2", "4:0", "4:1", "4:2",
-        "0:0", "1:1", "2:2", "3:3",
-        "0:1", "0:2", "1:2", "0:3", "1:3", "2:3", "0:4", "1:4", "2:4",
-        "胜其他", "平其他", "负其他",
-    ],
 }
 
 # ── 每种玩法的最高串关数 ──
@@ -65,7 +58,6 @@ PLAY_TYPE_MAX_PARLAY: dict[PlayType, int] = {
     PlayType.HALF_FULL_WDL: 6,
     PlayType.CORRECT_SCORE: 3,
     PlayType.WIN_LOSE_PASS: 15,
-    PlayType.SECOND_HALF_SCORE: 3,
 }
 
 

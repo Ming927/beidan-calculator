@@ -125,17 +125,6 @@ class TestWinLosePass:
         assert resolve_win_lose_pass(home, away) == expected
 
 
-class TestSecondHalfScore:
-    """下半场比分（使用 correct_score 逻辑，但用下半场数据）"""
-
-    def test_second_half_score_resolve(self):
-        r = MatchResult(
-            home_score=3, away_score=1,
-            second_half_home_score=1, second_half_away_score=0,
-        )
-        assert resolve_correct_score(r.second_half_home_score, r.second_half_away_score) == "1:0"
-
-
 class TestResolveBet:
     """resolve_bet 完整流程测试"""
 

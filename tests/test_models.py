@@ -12,9 +12,9 @@ from src.models import (
 class TestPlayType:
     """PlayType 枚举测试"""
 
-    def test_all_seven_types_exist(self):
+    def test_all_six_types_exist(self):
         types = [t for t in PlayType]
-        assert len(types) == 7
+        assert len(types) == 6
 
     def test_each_type_has_options(self):
         for pt in PlayType:
@@ -28,7 +28,6 @@ class TestPlayType:
         assert PLAY_TYPE_MAX_PARLAY[PlayType.HALF_FULL_WDL] == 6
         assert PLAY_TYPE_MAX_PARLAY[PlayType.CORRECT_SCORE] == 3
         assert PLAY_TYPE_MAX_PARLAY[PlayType.WIN_LOSE_PASS] == 15
-        assert PLAY_TYPE_MAX_PARLAY[PlayType.SECOND_HALF_SCORE] == 3
 
 
 class TestMatch:
