@@ -2,7 +2,7 @@
 
 from src.models import (
     Match, Ticket, BetSelection, ParlayConfig, PlayType,
-    SubTicketResult, CalculationResult,
+    SubTicketResult, CalculationResult, PLAY_TYPE_MAX_PARLAY,
 )
 from src.result_resolver import resolve_bet
 from src.parlay import decompose_parlay, validate_parlay
@@ -181,8 +181,9 @@ def calculate_batch(
         match_map = {m.match_id: m for m in pt_matches}
         all_combos = []
 
+        max_level = PLAY_TYPE_MAX_PARLAY.get(pt, 15)
         for k in parlay_levels:
-            if k > n:
+            if k > n or k > max_level:
                 continue
             for combo_indices in combinations(range(n), k):
                 combo_matches = [pt_matches[i] for i in combo_indices]
