@@ -134,7 +134,7 @@ async function fetchIssue() {
         if (!data.success) { status.innerHTML = `<span class="status-err">❌ ${data.error}</span>`; return; }
 
         issueData = data;
-        selectedIds = new Set(data.matches.map(m => m.id));
+        selectedIds = new Set(data.matches.slice(0, 15).map(m => m.id));
         selectedLevels = new Set();
         status.innerHTML = `<span class="status-ok">✅ 期号 ${data.issue} — ${data.count} 场比赛</span>`;
 
@@ -169,7 +169,8 @@ function renderMatches() {
         <td>${p['半全场']?p['半全场'].result+'-'+p['半全场'].sp:'-'}</td>
         </tr>`;
     }).join('');
-    document.getElementById('match-count').textContent = `(已选 ${selectedIds.size} 场)`;
+    const total = issueData.matches.length;
+    document.getElementById('match-count').textContent = `(已选 ${selectedIds.size}/${Math.min(total, 15)} 场，共${total}场，最多15场)`;
 }
 
 function toggleMatch(id, checked) {
