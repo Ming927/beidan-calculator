@@ -134,7 +134,11 @@ async function fetchIssue() {
         if (!data.success) { status.innerHTML = `<span class="status-err">❌ ${data.error}</span>`; return; }
 
         issueData = data;
-        selectedIds = new Set(data.matches.slice(0, 15).map(m => m.id));
+        // 按比分SP值降序，默认勾选赔率最高的15场
+        const sorted = [...data.matches].sort((a, b) =>
+            (b.plays['比分']?.sp || 0) - (a.plays['比分']?.sp || 0)
+        );
+        selectedIds = new Set(sorted.slice(0, 15).map(m => m.id));
         selectedLevels = new Set();
         status.innerHTML = `<span class="status-ok">✅ 期号 ${data.issue} — ${data.count} 场比赛</span>`;
 
@@ -180,7 +184,11 @@ function toggleMatch(id, checked) {
     renderMatches();
 }
 
-function selectAll() { selectedIds = new Set(issueData.matches.slice(0, 15).map(m=>m.id)); updateParlayLevels(); renderMatches(); }
+function selectAll() {
+    const sorted = [...issueData.matches].sort((a,b) => (b.plays['比分']?.sp||0) - (a.plays['比分']?.sp||0));
+    selectedIds = new Set(sorted.slice(0, 15).map(m=>m.id));
+    updateParlayLevels(); renderMatches();
+}
 function deselectAll() { selectedIds = new Set(); updateParlayLevels(); renderMatches(); }
 
 // ── Step 3: 串关级别 ──
