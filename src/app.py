@@ -1,11 +1,29 @@
 """Flask Web 应用 - 北单奖金计算器 API。"""
 
+import json
+import os
+import time
 from flask import Flask, request, jsonify, render_template
 from src.models import PlayType
 from src.calculator import calculate_batch, RETURN_RATE, MAX_PRIZE, TAX_THRESHOLD, TAX_RATE, BASE_AMOUNT
 from src.zx500_fetcher import fetch_issue, build_match_objects, _PLAY_TYPE_MAP
 
 app = Flask(__name__)
+
+HISTORY_FILE = "data/history.json"
+
+
+def _load_history():
+    if not os.path.exists(HISTORY_FILE):
+        return []
+    with open(HISTORY_FILE, "r", encoding="utf-8") as f:
+        return json.load(f)
+
+
+def _save_history(records):
+    os.makedirs(os.path.dirname(HISTORY_FILE), exist_ok=True)
+    with open(HISTORY_FILE, "w", encoding="utf-8") as f:
+        json.dump(records, f, ensure_ascii=False, indent=2, default=str)
 
 # ── 页面路由 ──
 
@@ -84,15 +102,76 @@ def api_calculate_batch():
                 all_results[pt.value] = batch["results"][pt.value]
                 grand_total += batch["results"][pt.value]["total_prize"]
 
-        return jsonify({
+        result_data = {
             "success": True,
             "results": all_results,
             "grand_total": round(grand_total, 2),
             "play_types_count": len(all_results),
-        })
+        }
+
+        # 保存到历史记录
+        try:
+            records = _load_history()
+            records.insert(0, {
+                "id": str(int(time.time() * 1000)),
+                "time": time.strftime("%Y-%m-%d %H:%M:%S"),
+                "issue": issue_data.get("issue", ""),
+                "matches_count": len(selected_ids),
+                "parlay_levels": sorted(parlay_levels, reverse=True),
+                "multiplier": multiplier,
+                "grand_total": round(grand_total, 2),
+                "play_types": list(all_results.keys()),
+                "details": all_results,
+            })
+            _save_history(records[:50])  # 最多保留50条
+        except Exception:
+            pass
+
+        return jsonify(result_data)
 
     except Exception as e:
         return jsonify({"success": False, "error": f"计算失败: {str(e)}"}), 500
+
+
+# ── 历史记录 ──
+
+@app.route("/api/history", methods=["GET"])
+def api_history():
+    """查询历史计算记录。"""
+    records = _load_history()
+    # 返回摘要（不含 details）
+    summary = []
+    for r in records[:30]:
+        summary.append({
+            "id": r["id"],
+            "time": r["time"],
+            "issue": r.get("issue", ""),
+            "matches_count": r.get("matches_count", 0),
+            "parlay_levels": r.get("parlay_levels", []),
+            "multiplier": r.get("multiplier", 1),
+            "grand_total": r.get("grand_total", 0),
+            "play_types": r.get("play_types", []),
+        })
+    return jsonify({"records": summary})
+
+
+@app.route("/api/history/<record_id>", methods=["GET"])
+def api_history_detail(record_id):
+    """查询一条历史记录的详细信息。"""
+    records = _load_history()
+    for r in records:
+        if r["id"] == record_id:
+            return jsonify({"success": True, "record": r})
+    return jsonify({"success": False, "error": "记录不存在"}), 404
+
+
+@app.route("/api/history/<record_id>", methods=["DELETE"])
+def api_history_delete(record_id):
+    """删除一条历史记录。"""
+    records = _load_history()
+    records = [r for r in records if r["id"] != record_id]
+    _save_history(records)
+    return jsonify({"success": True})
 
 
 # ── 规则信息 ──

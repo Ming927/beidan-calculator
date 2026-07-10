@@ -103,6 +103,13 @@ button{cursor:pointer;transition:all .2s}
 <div class="summary-bar" id="summary-bar"></div>
 <div id="result-groups"></div>
 </div>
+
+<!-- 历史记录 -->
+<div class="card">
+<h2>📋 历史记录 <button class="btn-sm" onclick="loadHistory()" style="margin-left:8px">刷新</button></h2>
+<div id="history-list"><div class="hint" style="padding:20px;text-align:center">暂无记录</div></div>
+<div id="history-detail" style="display:none;margin-top:12px"></div>
+</div>
 </div>
 
 <script>
@@ -267,6 +274,61 @@ function renderResults(data) {
         </tr>`).join('')}</tbody></table></div></div>`;
     }).join('');
 }
+
+// ── 历史记录 ──
+async function loadHistory() {
+    try {
+        const resp = await fetch('/api/history');
+        const data = await resp.json();
+        const list = document.getElementById('history-list');
+        if (!data.records || data.records.length === 0) {
+            list.innerHTML = '<div class="hint" style="padding:20px;text-align:center">暂无记录</div>';
+            return;
+        }
+        list.innerHTML = data.records.map(r => `
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 12px;border-bottom:1px solid #f0f0f0;cursor:pointer"
+             onclick="viewHistoryDetail('${r.id}')">
+        <div>
+            <strong>期号 ${r.issue||'-'}</strong>
+            <span style="color:#999;font-size:12px;margin-left:8px">${r.time}</span>
+            <span style="font-size:12px;margin-left:8px">${r.matches_count}场 ${r.parlay_levels.map(l=>l+'串1').join('+')} ×${r.multiplier}倍</span>
+        </div>
+        <div>
+            <span style="font-weight:700;color:${r.grand_total>0?'#52c41a':'#ff4d4f'}">¥${r.grand_total.toFixed(2)}</span>
+            <button class="btn-sm" style="margin-left:8px;color:#ff4d4f" onclick="event.stopPropagation();deleteHistory('${r.id}')">删除</button>
+        </div>
+        </div>`).join('');
+        document.getElementById('history-detail').style.display = 'none';
+    } catch(e) { console.error(e); }
+}
+
+async function viewHistoryDetail(id) {
+    try {
+        const resp = await fetch('/api/history/' + id);
+        const data = await resp.json();
+        if (!data.success) return;
+        const r = data.record;
+        const detail = document.getElementById('history-detail');
+        detail.style.display = 'block';
+        detail.innerHTML = `
+        <div class="card" style="background:#fafafa">
+        <h3>期号 ${r.issue||'-'} — ${r.time} — ${r.matches_count}场 ${r.parlay_levels.map(l=>l+'串1').join('+')} ×${r.multiplier}倍</h3>
+        <div style="margin-top:8px">${Object.entries(r.details||{}).map(([name,rd])=>`
+        <div class="play-group">
+        <div class="play-header"><span>${name}</span>
+        <span class="${rd.net_profit>=0?'profit':'loss'}">净收益: ${rd.net_profit>=0?'+':''}¥${rd.net_profit.toFixed(2)} (中${rd.combos.filter(c=>c.won).length}/${rd.combo_count}注)</span>
+        </div></div>`).join('')}</div>
+        </div>`;
+    } catch(e) { console.error(e); }
+}
+
+async function deleteHistory(id) {
+    if (!confirm('确定删除这条记录？')) return;
+    await fetch('/api/history/' + id, { method: 'DELETE' });
+    loadHistory();
+}
+
+loadHistory();
 </script>
 </body>
 </html>
