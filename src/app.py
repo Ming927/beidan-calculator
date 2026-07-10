@@ -169,7 +169,10 @@ def api_history_detail(record_id):
 
 @app.route("/api/history/<record_id>", methods=["DELETE"])
 def api_history_delete(record_id):
-    """删除一条历史记录。"""
+    """删除指定记录，或清空全部（id="all"）。"""
+    if record_id == "all":
+        _save_history([])
+        return jsonify({"success": True})
     records = _load_history()
     records = [r for r in records if r["id"] != record_id]
     _save_history(records)
