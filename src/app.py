@@ -10,6 +10,7 @@ from src.models import (
 from src.calculator import calculate, RETURN_RATE, MAX_PRIZE, TAX_THRESHOLD, TAX_RATE, BASE_AMOUNT
 from src.parlay import M_N_PRESETS, validate_parlay
 from src.storage import BetStorage
+from src.odds_fetcher import get_default_fetcher, format_matches_for_api
 
 app = Flask(__name__)
 storage = BetStorage("data/bets.json")
@@ -218,6 +219,49 @@ def api_history():
             for t in tickets
         ]
     })
+
+
+# ── 赔率获取 API ──
+
+@app.route("/api/fetch-odds", methods=["POST"])
+def api_fetch_odds():
+    """从互联网抓取最新的北单赔率数据。
+
+    请求: POST /api/fetch-odds
+    可选参数 JSON: {"url": "自定义数据源URL", "force": true}
+
+    返回: {"success": true, "matches": {...}, "count": N}
+    """
+    try:
+        data = request.get_json(silent=True) or {}
+        custom_url = data.get("url")
+        force_refresh = data.get("force", False)
+
+        fetcher = get_default_fetcher()
+        if force_refresh:
+            fetcher.invalidate()
+        if custom_url and hasattr(fetcher, '_inner'):
+            fetcher._inner.base_url = custom_url
+            fetcher.invalidate()
+
+        matches = fetcher.fetch_matches()
+
+        if not matches:
+            return jsonify({
+                "success": False,
+                "error": "未能获取到赔率数据。请检查网络连接或目标网站是否可访问。"
+            }), 502
+
+        formatted = format_matches_for_api(matches)
+
+        return jsonify({
+            "success": True,
+            "count": len(matches),
+            "matches": formatted,
+        })
+
+    except Exception as e:
+        return jsonify({"success": False, "error": f"获取失败: {str(e)}"}), 500
 
 
 if __name__ == "__main__":

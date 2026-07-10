@@ -87,6 +87,10 @@ h1{text-align:center;color:#1a1a2e;margin-bottom:8px;font-size:24px}
 <!-- 比赛管理 -->
 <div class="card">
 <h2>比赛数据</h2>
+<div style="margin-bottom:12px">
+<button class="btn btn-primary" onclick="fetchLiveOdds()" id="btn-fetch-odds">🔄 获取实时赔率</button>
+<span id="fetch-status" style="font-size:12px;color:#999;margin-left:8px"></span>
+</div>
 <div class="grid" id="matches-container"></div>
 <div class="btn-group">
 <button class="btn btn-primary" onclick="addMatch()">+ 添加比赛</button>
@@ -447,6 +451,58 @@ async function loadHistory() {
         <div style="font-size:12px;color:#999">${t.parlay.mode==='single'?'单关':(t.parlay.mode==='m_n'?t.parlay.m+'串'+t.parlay.n:'自由过关')} · ${t.multiplier}倍</div>
         </div>`).join('');
     } catch(e) { console.error('History load error:', e); }
+}
+
+// ── 赔率获取 ──
+async function fetchLiveOdds() {
+    const btn = document.getElementById('btn-fetch-odds');
+    const status = document.getElementById('fetch-status');
+    btn.disabled = true;
+    btn.textContent = '⏳ 获取中...';
+    status.textContent = '';
+
+    try {
+        const resp = await fetch('/api/fetch-odds', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({force: true})
+        });
+        const data = await resp.json();
+        if (!data.success) {
+            status.textContent = '❌ ' + (data.error || '获取失败');
+            status.style.color = '#ff4d4f';
+            return;
+        }
+
+        // 用获取到的数据替换当前比赛列表
+        matches = [];
+        matchCounter = 0;
+        for (const [mid, m] of Object.entries(data.matches)) {
+            matchCounter++;
+            matches.push({
+                id: mid,
+                home_team: m.home_team || '',
+                away_team: m.away_team || '',
+                play_type: m.play_type || '让球胜平负',
+                handicap: m.handicap || 0,
+                status: m.status || 'pending',
+                result: m.result || {home_score:0, away_score:0, half_home_score:0, half_away_score:0, second_half_home_score:0, second_half_away_score:0},
+                sp_values: m.sp_values || {},
+                selected_option: null
+            });
+        }
+        renderMatches();
+        updateParlayUI();
+        updatePreview();
+        status.textContent = `✅ 成功获取 ${data.count} 场比赛`;
+        status.style.color = '#52c41a';
+    } catch(e) {
+        status.textContent = '❌ 网络错误: ' + e.message;
+        status.style.color = '#ff4d4f';
+    } finally {
+        btn.disabled = false;
+        btn.textContent = '🔄 获取实时赔率';
+    }
 }
 
 // ── 启动 ──
