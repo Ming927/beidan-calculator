@@ -49,6 +49,30 @@ _PLAY_TYPE_MAP = {
 # 比分解析正则: (0:1) 3:2
 _SCORE_RE = re.compile(r'\((\d+):(\d+)\)\s*(\d+):(\d+)')
 
+# 标准比分模式（与 models.py 中 PLAY_TYPE_OPTIONS 一致）
+_STANDARD_SCORES = {
+    "1:0", "2:0", "2:1", "3:0", "3:1", "3:2", "4:0", "4:1", "4:2",
+    "0:0", "1:1", "2:2", "3:3",
+    "0:1", "0:2", "1:2", "0:3", "1:3", "2:3", "0:4", "1:4", "2:4",
+}
+
+
+def _normalize_score(score_text: str) -> str:
+    """将非标准比分映射为 胜其他/平其他/负其他。"""
+    if score_text in _STANDARD_SCORES:
+        return score_text
+    # 尝试解析 "5:1" 格式
+    parts = score_text.split(":")
+    if len(parts) == 2 and parts[0].isdigit() and parts[1].isdigit():
+        h, a = int(parts[0]), int(parts[1])
+        if h > a:
+            return "胜其他"
+        elif h == a:
+            return "平其他"
+        else:
+            return "负其他"
+    return score_text
+
 BASE_URL = "https://zx.500.com/zqdc/kaijiang.php"
 
 
@@ -146,6 +170,8 @@ def _parse_html(html: str, expect: str) -> dict:
                     normalized = "7+" if n >= 7 else str(n)
                 except ValueError:
                     normalized = result_text
+            elif play_name == "比分" or play_name == "下半场比分":
+                normalized = _normalize_score(result_text)
             plays[play_name] = {"result": normalized, "sp": sp_val}
 
         matches.append({
