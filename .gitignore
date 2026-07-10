@@ -1,7 +1,7 @@
 __pycache__/
 *.pyc
 *.pyo
-data/bets.json
+data/
 .env
 .venv/
 venv/

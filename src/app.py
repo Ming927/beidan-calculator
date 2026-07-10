@@ -78,6 +78,8 @@ def api_calculate_batch():
 
         if not selected_ids or not parlay_levels:
             return jsonify({"success": False, "error": "请选择场次和串关级别"}), 400
+        if len(selected_ids) > 15:
+            return jsonify({"success": False, "error": "最多选择15场比赛"}), 400
 
         # 过滤选中的比赛
         issue_data["matches"] = [

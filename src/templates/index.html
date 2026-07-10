@@ -171,12 +171,13 @@ function renderMatches() {
 }
 
 function toggleMatch(id, checked) {
+    if (checked && selectedIds.size >= 15) { alert('最多选择15场比赛'); return; }
     checked ? selectedIds.add(id) : selectedIds.delete(id);
     updateParlayLevels();
     renderMatches();
 }
 
-function selectAll() { selectedIds = new Set(issueData.matches.map(m=>m.id)); updateParlayLevels(); renderMatches(); }
+function selectAll() { selectedIds = new Set(issueData.matches.slice(0, 15).map(m=>m.id)); updateParlayLevels(); renderMatches(); }
 function deselectAll() { selectedIds = new Set(); updateParlayLevels(); renderMatches(); }
 
 // ── Step 3: 串关级别 ──
