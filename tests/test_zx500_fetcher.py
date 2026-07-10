@@ -29,7 +29,7 @@ MOCK_HTML = """<html><body><table class="ld_table">
 <td>5</td><td class="eng">9.88</td><td></td>
 <td>3:2</td><td class="eng">30.94</td><td></td>
 <td>上单</td><td class="eng">2.98</td><td></td>
-<td>负-胜</td><td class="eng">13.43</td>
+<td>负-胜</td><td class="eng">13.43</td>  <!-- 半全场: "负-胜" → 标准化为 "0-3" -->
 </tr>
 <tr>
 <td>2</td><td>欧冠资格</td><td>07-08 01:30</td>
@@ -39,7 +39,7 @@ MOCK_HTML = """<html><body><table class="ld_table">
 <td>2</td><td class="eng">5.97</td><td></td>
 <td>2:0</td><td class="eng">31.73</td><td></td>
 <td>下双</td><td class="eng">3.64</td><td></td>
-<td>胜-胜</td><td class="eng">9.56</td>
+<td>胜-胜</td><td class="eng">9.56</td>  <!-- 半全场: "胜-胜" → 标准化为 "3-3" -->
 </tr>
 </table></body></html>"""
 
@@ -84,8 +84,8 @@ class TestParseHTML:
         assert m1["plays"]["比分"]["sp"] == 30.94
         # 上下单双
         assert m1["plays"]["上下单双"]["result"] == "上单"
-        # 半全场
-        assert m1["plays"]["半全场"]["result"] == "负-胜"
+        # 半全场 (500.com "负-胜" → 标准化为 "0-3")
+        assert m1["plays"]["半全场"]["result"] == "0-3"
 
     def test_parse_empty_html(self):
         result = _parse_html("<html></html>", "99999")

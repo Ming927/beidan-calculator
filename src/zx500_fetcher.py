@@ -130,10 +130,16 @@ def _parse_html(html: str, expect: str) -> dict:
                 sp_val = float(sp_text)
             except ValueError:
                 sp_val = 0.0
-            # 标准化结果名: 让球胜平负的 "胜/平/负" → "3/1/0"
+            # 标准化结果名，映射 500.com 中文 → 系统内部码
             normalized = result_text
             if play_name == "让球胜平负":
                 normalized = {"胜": "3", "平": "1", "负": "0"}.get(result_text, result_text)
+            elif play_name == "半全场":
+                normalized = {
+                    "胜-胜": "3-3", "胜-平": "3-1", "胜-负": "3-0",
+                    "平-胜": "1-3", "平-平": "1-1", "平-负": "1-0",
+                    "负-胜": "0-3", "负-平": "0-1", "负-负": "0-0",
+                }.get(result_text, result_text)
             plays[play_name] = {"result": normalized, "sp": sp_val}
 
         matches.append({
